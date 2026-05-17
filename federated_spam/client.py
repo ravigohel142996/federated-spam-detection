@@ -12,6 +12,13 @@ from datetime import datetime
 
 import streamlit as st
 
+# Keep simulation knobs in one place for readability.
+MAX_LOG_ENTRIES = 120
+BASE_CONFIDENCE = 30
+SCORE_MULTIPLIER = 12
+RANDOM_VARIANCE = 8
+MAX_CONFIDENCE = 95
+
 # ------------------------------
 # Basic page setup
 # ------------------------------
@@ -93,7 +100,7 @@ def append_log(message: str) -> None:
     timestamp = datetime.now().strftime("%H:%M:%S")
     st.session_state.logs.append(f"[{timestamp}] {message}")
     # Keep only latest logs to avoid unlimited growth.
-    st.session_state.logs = st.session_state.logs[-120:]
+    st.session_state.logs = st.session_state.logs[-MAX_LOG_ENTRIES:]
 
 
 def render_status(client_id: str, status: str) -> None:
@@ -205,7 +212,10 @@ if run_simulation:
     spam_keywords = ["free", "winner", "win", "urgent", "click", "crypto", "prize", "offer"]
     score = sum(1 for keyword in spam_keywords if keyword in input_message.lower())
     # Keep logic simple: confidence is a lightweight rule-based estimate.
-    confidence = min(95, 30 + score * 12 + random.randint(0, 8))
+    confidence = min(
+        MAX_CONFIDENCE,
+        BASE_CONFIDENCE + score * SCORE_MULTIPLIER + random.randint(0, RANDOM_VARIANCE),
+    )
     is_spam = confidence >= 60
 
     st.session_state.confidence = confidence
