@@ -16,25 +16,26 @@
 
 # Import statements would go here (e.g., flwr, torch, numpy).
 import flwr as fl
+import numpy as np
 
-print("Flower installed successfully")
-
-def start_client(server_address: str = "localhost:8080"):
-    """Placeholder function to start the FL client.
-
-    Args:
-        server_address: Address of the Flower server to connect to.
-
-    This function is a stub. Replace with actual Flower client code when
-    implementing the federated logic.
-    """
-    # TODO: implement:
-    # 1. Load local dataset from `dataset/`
-    # 2. Create model from `model.py`
-    # 3. Implement a Flower client class and start it with flwr.client.start()
-    print(f"Client would connect to server at {server_address}")
+print("Connecting client to federated server...")
 
 
-if __name__ == "__main__":
-    # When run directly, this will only print the intended server address.
-    start_client()
+class SimpleClient(fl.client.NumPyClient):
+
+    def get_parameters(self, config):
+        return [np.array([1.0, 2.0, 3.0])]
+
+    def fit(self, parameters, config):
+        print("Client training...")
+        return parameters, 1, {}
+
+    def evaluate(self, parameters, config):
+        print("Client evaluating...")
+        return 0.5, 1, {}
+
+
+fl.client.start_numpy_client(
+    server_address="localhost:8080",
+    client=SimpleClient(),
+)

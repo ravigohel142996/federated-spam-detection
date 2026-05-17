@@ -13,23 +13,9 @@
 # Import statements would go here (e.g., flwr, typing).
 import flwr as fl
 
-print("Federated server setup ready")
+print("Starting Federated Learning Server...")
 
-def start_server(host: str = "0.0.0.0", port: int = 8080):
-    """Placeholder function to start the FL server.
-
-    Args:
-        host: Host interface to bind the server to.
-        port: Port to listen on.
-
-    This function is a stub. Replace with actual Flower server code when
-    implementing the federated logic.
-    """
-    # TODO: implement:
-    # 1. Choose/implement an aggregation strategy (FedAvg, etc.)
-    # 2. Start the Flower server: flwr.server.start_server(...)
-    print(f"Server would start at http://{host}:{port}")
-
-
-if __name__ == "__main__":
-    start_server()
+fl.server.start_server(
+    server_address="0.0.0.0:8080",
+    config=fl.server.ServerConfig(num_rounds=3),
+)
