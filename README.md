@@ -98,10 +98,10 @@ Start the server:
 python server.py
 ```
 
-Run clients:
+Run dashboard client:
 
 ```bash
-python client.py
+streamlit run federated_spam/client.py
 ```
 
 ---
