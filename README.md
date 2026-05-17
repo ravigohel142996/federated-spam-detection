@@ -125,8 +125,8 @@ The objective of this project is to explore privacy-preserving machine learning 
 
 ## Contributors
 
+* P
 * R
-* 
 * 
 
 ---
