@@ -206,7 +206,9 @@ if run_simulation:
     # Step 5: run final spam prediction with confidence.
     step_box.success("Step 5/5: Running global model inference")
     score = sum(1 for keyword in SPAM_KEYWORDS if keyword in input_message.lower())
-    # Keep logic simple: confidence is a lightweight rule-based estimate.
+    # Keep logic simple for this research demo UI:
+    # confidence is a lightweight rule-based estimate, while the FL pipeline
+    # visualization demonstrates where real model inference would happen.
     confidence = min(
         MAX_CONFIDENCE,
         BASE_CONFIDENCE + score * SCORE_MULTIPLIER + random.randint(0, RANDOM_VARIANCE),
@@ -217,8 +219,9 @@ if run_simulation:
     st.session_state.prediction = "Spam detected" if is_spam else "Normal message"
     final_status = status_from_prediction(is_spam)
 
-    # Reflect final prediction state on one client for visual incident signal.
-    st.session_state.client_status["H3"] = final_status
+    # Reflect final prediction state on one random client for incident signal.
+    incident_client = random.choice(["H1", "H2", "H3", "H4"])
+    st.session_state.client_status[incident_client] = final_status
 
     append_log("Global model inference completed")
     append_log(f"Prediction: {st.session_state.prediction} ({confidence}% confidence)")
