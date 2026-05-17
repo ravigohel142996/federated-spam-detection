@@ -18,6 +18,7 @@ BASE_CONFIDENCE = 30
 SCORE_MULTIPLIER = 12
 RANDOM_VARIANCE = 8
 MAX_CONFIDENCE = 95
+SPAM_KEYWORDS = ["free", "winner", "win", "urgent", "click", "crypto", "prize", "offer"]
 
 # ------------------------------
 # Basic page setup
@@ -150,11 +151,6 @@ with st.sidebar:
 # ------------------------------
 left_col, mid_col, right_col = st.columns([1.1, 1.2, 1.5])
 
-with left_col:
-    st.subheader("Client Connectivity")
-    for client_name in ["H1", "H2", "H3", "H4"]:
-        render_status(client_name, st.session_state.client_status[client_name])
-
 with mid_col:
     st.subheader("Federated Learning Steps")
     step_box = st.empty()
@@ -209,8 +205,7 @@ if run_simulation:
 
     # Step 5: run final spam prediction with confidence.
     step_box.success("Step 5/5: Running global model inference")
-    spam_keywords = ["free", "winner", "win", "urgent", "click", "crypto", "prize", "offer"]
-    score = sum(1 for keyword in spam_keywords if keyword in input_message.lower())
+    score = sum(1 for keyword in SPAM_KEYWORDS if keyword in input_message.lower())
     # Keep logic simple: confidence is a lightweight rule-based estimate.
     confidence = min(
         MAX_CONFIDENCE,
