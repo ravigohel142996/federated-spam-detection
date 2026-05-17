@@ -13,11 +13,11 @@ from datetime import datetime
 import streamlit as st
 
 # Keep simulation knobs in one place for readability.
-MAX_LOG_ENTRIES = 120
-BASE_CONFIDENCE = 30
-SCORE_MULTIPLIER = 12
-RANDOM_VARIANCE = 8
-MAX_CONFIDENCE = 95
+MAX_LOG_ENTRIES = 120  # Retain recent events only to keep log panel fast and readable.
+BASE_CONFIDENCE = 30  # Baseline score for neutral messages.
+SCORE_MULTIPLIER = 12  # Extra confidence boost per detected spam keyword.
+RANDOM_VARIANCE = 8  # Small jitter to mimic real-world inference variance.
+MAX_CONFIDENCE = 95  # Cap confidence to avoid unrealistic certainty in demo mode.
 SPAM_KEYWORDS = ["free", "winner", "win", "urgent", "click", "crypto", "prize", "offer"]
 
 # ------------------------------
@@ -205,7 +205,8 @@ if run_simulation:
 
     # Step 5: run final spam prediction with confidence.
     step_box.success("Step 5/5: Running global model inference")
-    score = sum(1 for keyword in SPAM_KEYWORDS if keyword in input_message.lower())
+    message_lower = input_message.lower()
+    score = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
     # Keep logic simple for this research demo UI:
     # confidence is a lightweight rule-based estimate, while the FL pipeline
     # visualization demonstrates where real model inference would happen.
