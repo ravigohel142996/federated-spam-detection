@@ -1,41 +1,52 @@
-# client.py
-# Starter client for the Federated Learning spam detection prototype.
-# Purpose: register a local dataset and model with the Flower (flwr) client
-# framework and participate in training rounds run by the server.
+"""Federated client simulator for the spam detection demo.
 
-# NOTE:
-# - This file contains only comments and minimal placeholders to keep it
-#   beginner-friendly. Do not expect a working client until you implement
-#   the data loading and model logic in `model.py` and `dataset/`.
+This script prints a clean client-side workflow for the four simulated clients
+H1-H4. It loads its own shard of the spam dataset, produces a tiny local update,
+and shows the same logs a Flower client would emit during a research demo.
+"""
 
-# Example structure:
-#  - load local data
-#  - create model instance
-#  - wrap model in Flower client
-#  - start client to connect to the server
+from __future__ import annotations
 
-# Import statements would go here (e.g., flwr, torch, numpy).
-import flwr as fl
+import time
+from pathlib import Path
+
 import numpy as np
 
-print("Connecting client to federated server...")
+from model import client_update, load_spam_dataset, split_dataset_for_clients
 
 
-class SimpleClient(fl.client.NumPyClient):
-
-    def get_parameters(self, config):
-        return [np.array([1.0, 2.0, 3.0])]
-
-    def fit(self, parameters, config):
-        print("Client training...")
-        return parameters, 1, {}
-
-    def evaluate(self, parameters, config):
-        print("Client evaluating...")
-        return 0.5, 1, {}
+DATASET_PATH = Path(__file__).parent / "dataset" / "spam.csv"
+CLIENT_IDS = ["H1", "H2", "H3", "H4"]
 
 
-fl.client.start_numpy_client(
-    server_address="localhost:8080",
-    client=SimpleClient(),
-)
+def _log(message: str) -> None:
+    print(message, flush=True)
+
+
+def run_clients() -> None:
+    """Simulate four lightweight federated clients."""
+
+    _log("Connecting simulated clients to the federated server")
+    data = load_spam_dataset(DATASET_PATH)
+    shards = split_dataset_for_clients(data, CLIENT_IDS)
+
+    for client_id in CLIENT_IDS:
+        shard = shards[client_id]
+        _log(f"Client {client_id} connected")
+        _log(f"Client {client_id}: local training started")
+        time.sleep(0.3)
+
+        update = client_update(shard, client_id)
+        parameter_vector = np.round(update["parameters"], 3).tolist()
+
+        _log(f"Client {client_id}: sending encrypted parameters {parameter_vector}")
+        time.sleep(0.2)
+        _log(f"Client {client_id}: synchronization complete")
+        _log(f"Client {client_id}: {update['sample_count']} local samples processed")
+        time.sleep(0.35)
+
+    _log("All simulated clients finished")
+
+
+if __name__ == "__main__":
+    run_clients()
