@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import time
-from importlib import import_module
 from pathlib import Path
 
-st = import_module("streamlit")
+import streamlit as st
 
 from model import (
     CLIENT_IDS,

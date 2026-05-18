@@ -29,6 +29,6 @@ python federated_spam/client.py
 streamlit run federated_spam/app.py
 ```
 
-The workspace config already binds Streamlit to `0.0.0.0:8501` and disables file watching, which keeps the app stable in Codespaces.
+The workspace config already binds Streamlit to `0.0.0.0:8501`, disables file watching, and asks VS Code to auto-forward port `8501`.
 
-If the browser does not open automatically, use the forwarded `8501` port URL from VS Code.
+If the browser does not open automatically, open the forwarded `8501` port from the VS Code Ports panel instead of typing the hostname manually.
