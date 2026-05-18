@@ -10,11 +10,25 @@ Structure:
 - `dataset/` — Folder to store local client datasets (see README inside).
 - `requirements.txt` — Minimal packages needed to run the prototype.
 
-Next steps (suggested):
-1. Populate `dataset/` with small `train.csv` files for local testing.
-2. Implement `build_model()` in `model.py` (scikit-learn or PyTorch).
-3. Implement the Flower client in `client.py` and server strategy in `server.py`.
-4. Run experiments locally using a few client processes.
+Run the demo:
+1. Start the simulated federated server in one terminal:
 
-This repository intentionally contains placeholders only. If you'd like, I
-can next implement a minimal working end-to-end example (scikit-learn + flwr).
+```bash
+python federated_spam/server.py
+```
+
+2. Start the simulated clients in another terminal:
+
+```bash
+python federated_spam/client.py
+```
+
+3. Launch the Streamlit dashboard:
+
+```bash
+streamlit run federated_spam/app.py
+```
+
+The workspace config already binds Streamlit to `0.0.0.0:8501` and disables file watching, which keeps the app stable in Codespaces.
+
+If the browser does not open automatically, use the forwarded `8501` port URL from VS Code.
