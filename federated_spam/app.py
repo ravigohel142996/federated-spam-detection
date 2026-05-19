@@ -35,6 +35,12 @@ def _initialize_state() -> None:
         st.session_state.latest_result = None
     if "latest_client_updates" not in st.session_state:
         st.session_state.latest_client_updates = []
+    if "default_client_snapshot" not in st.session_state:
+        frame = load_spam_dataset(DATASET_PATH)
+        shards = split_dataset_for_clients(frame, CLIENT_IDS)
+        st.session_state.default_client_snapshot = [
+            client_update(shards[client_id], client_id) for client_id in CLIENT_IDS
+        ]
 
 
 def _inject_styles() -> None:
@@ -889,7 +895,7 @@ def _inject_styles() -> None:
     )
 
 
-def _escape(value: object) -> str:
+def _escape_html(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
@@ -918,9 +924,7 @@ def _load_client_snapshot() -> list[dict]:
     if st.session_state.latest_client_updates:
         return st.session_state.latest_client_updates
 
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
-    return [client_update(shards[client_id], client_id) for client_id in CLIENT_IDS]
+    return st.session_state.default_client_snapshot
 
 
 def _render_sidebar() -> None:
@@ -950,7 +954,7 @@ def _render_sidebar() -> None:
                 </div>
                 <div class="sidebar-metric">
                     <div class="sidebar-label">Threat Level</div>
-                    <div class="sidebar-value {threat_tone}">{_escape(threat_level)}</div>
+                    <div class="sidebar-value {threat_tone}">{_escape_html(threat_level)}</div>
                 </div>
             </div>
 
@@ -1007,6 +1011,10 @@ def _render_client_cards(client_updates: list[dict]) -> None:
         parameter_values = [float(value) for value in update["parameters"][: len(stat_labels)]]
         if len(parameter_values) < len(stat_labels):
             parameter_values.extend([0.0] * (len(stat_labels) - len(parameter_values)))
+        if len(update["parameters"]) != len(stat_labels):
+            _append_log(
+                f"warning: client {update['client_id']} reported {len(update['parameters'])} parameters"
+            )
         rows: list[str] = []
         for label, metric_value in zip(stat_labels, parameter_values):
             width = max(0, min(int(metric_value * 100), 100))
@@ -1014,7 +1022,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
                 f"""
                 <div class="metric-line">
                     <div class="metric-head">
-                        <div class="metric-label">{_escape(label)}</div>
+                        <div class="metric-label">{_escape_html(label)}</div>
                         <div class="metric-value">{metric_value:.2f}</div>
                     </div>
                     <div class="mini-track"><span class="mini-fill" style="width:{width}%"></span></div>
@@ -1027,7 +1035,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
             <div class="client-card">
                 <div class="client-top">
                     <div>
-                        <div class="client-name">Client {_escape(update['client_id'])}</div>
+                        <div class="client-name">Client {_escape_html(update['client_id'])}</div>
                         <div class="client-subtitle">Compact local metrics from the current shard update.</div>
                     </div>
                     <div class="client-badge">{int(update['sample_count'])} samples</div>
@@ -1069,7 +1077,7 @@ def _render_empty_result() -> None:
                 <div class="empty-stats">
                     <div class="empty-stat">
                         <div class="empty-stat-label">Threat state</div>
-                        <div class="empty-stat-value">{_escape(st.session_state.threat_level)}</div>
+                        <div class="empty-stat-value">{_escape_html(st.session_state.threat_level)}</div>
                     </div>
                     <div class="empty-stat">
                         <div class="empty-stat-label">Aggregation round</div>
@@ -1116,7 +1124,7 @@ def _render_result_section(result: dict) -> None:
     ]
 
     keyword_pills = "".join(
-        f'<span class="keyword-pill">{_escape(keyword)}</span>' for keyword in matches
+        f'<span class="keyword-pill">{_escape_html(keyword)}</span>' for keyword in matches
     ) or '<span class="keyword-pill">No suspicious keywords matched</span>'
 
     workflow_html = "".join(
@@ -1124,8 +1132,8 @@ def _render_result_section(result: dict) -> None:
         <div class="workflow-step">
             <div class="workflow-index">{index}</div>
             <div>
-                <div class="workflow-step-title">{_escape(title)}</div>
-                <div class="workflow-step-copy">{_escape(copy)}</div>
+                <div class="workflow-step-title">{_escape_html(title)}</div>
+                <div class="workflow-step-copy">{_escape_html(copy)}</div>
             </div>
         </div>
         """
@@ -1143,9 +1151,9 @@ def _render_result_section(result: dict) -> None:
                 <div class="result-top">
                     <div>
                         <div class="result-kicker">Prediction output</div>
-                        <div class="prediction-badge {prediction_class}">{_escape(prediction)}</div>
+                        <div class="prediction-badge {prediction_class}">{_escape_html(prediction)}</div>
                     </div>
-                    <div class="tone-pill {_tone_class(threat_level)}">Threat {_escape(threat_level)}</div>
+                    <div class="tone-pill {_tone_class(threat_level)}">Threat {_escape_html(threat_level)}</div>
                 </div>
 
                 <div class="result-confidence">
@@ -1163,7 +1171,7 @@ def _render_result_section(result: dict) -> None:
                     <div class="probability-card">
                         <div class="probability-head">
                             <div class="probability-label">Spam probability</div>
-                            <div class="probability-value">{_escape(format_percent(spam_probability))}</div>
+                            <div class="probability-value">{_escape_html(format_percent(spam_probability))}</div>
                         </div>
                         <div class="meter-track"><span class="meter-fill" style="width:{int(spam_probability * 100)}%"></span></div>
                     </div>
@@ -1171,7 +1179,7 @@ def _render_result_section(result: dict) -> None:
                     <div class="probability-card">
                         <div class="probability-head">
                             <div class="probability-label">Ham probability</div>
-                            <div class="probability-value">{_escape(format_percent(ham_probability))}</div>
+                            <div class="probability-value">{_escape_html(format_percent(ham_probability))}</div>
                         </div>
                         <div class="meter-track"><span class="meter-fill" style="width:{int(ham_probability * 100)}%"></span></div>
                     </div>
@@ -1179,7 +1187,7 @@ def _render_result_section(result: dict) -> None:
                     <div class="probability-card">
                         <div class="probability-head">
                             <div class="probability-label">Threat level</div>
-                            <div class="probability-value">{_escape(threat_level)}</div>
+                            <div class="probability-value">{_escape_html(threat_level)}</div>
                         </div>
                         <div class="meter-track"><span class="meter-fill" style="width:{int(spam_probability * 100)}%"></span></div>
                     </div>
@@ -1187,7 +1195,7 @@ def _render_result_section(result: dict) -> None:
                     <div class="probability-card">
                         <div class="probability-head">
                             <div class="probability-label">Keyword signal</div>
-                            <div class="probability-value">{_escape(format_percent(keyword_component))}</div>
+                            <div class="probability-value">{_escape_html(format_percent(keyword_component))}</div>
                         </div>
                         <div class="meter-track"><span class="meter-fill" style="width:{int(keyword_component * 100)}%"></span></div>
                     </div>
@@ -1228,7 +1236,7 @@ def _render_logs() -> None:
             <div class="activity-kicker">Live activity feed</div>
             <div class="result-title">Federated runtime events</div>
             <p class="activity-copy">Client updates, aggregation steps, and prediction events are streamed here.</p>
-            <div class="activity-window">{html.escape(log_text, quote=False)}</div>
+            <div class="activity-window">{_escape_html(log_text)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1324,7 +1332,8 @@ def main() -> None:
                 placeholder="Example: Congratulations, click now to claim your free reward.",
                 label_visibility="collapsed",
             )
-            with st.columns([1, 1.2, 1])[1]:
+            _, center_column, _ = st.columns([1, 1.2, 1])
+            with center_column:
                 run_clicked = st.form_submit_button("Run Detection", use_container_width=True)
 
     with top_right:
