@@ -20,6 +20,14 @@ from model import (
 )
 
 DATASET_PATH = Path(__file__).parent / "dataset" / "spam.csv"
+MAX_VISIBLE_LOG_LINES = 24
+
+
+@st.cache_data(show_spinner=False)
+def _build_default_client_snapshot() -> list[dict]:
+    frame = load_spam_dataset(DATASET_PATH)
+    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    return [client_update(shards[client_id], client_id) for client_id in CLIENT_IDS]
 
 
 def _initialize_state() -> None:
@@ -36,11 +44,7 @@ def _initialize_state() -> None:
     if "latest_client_updates" not in st.session_state:
         st.session_state.latest_client_updates = []
     if "default_client_snapshot" not in st.session_state:
-        frame = load_spam_dataset(DATASET_PATH)
-        shards = split_dataset_for_clients(frame, CLIENT_IDS)
-        st.session_state.default_client_snapshot = [
-            client_update(shards[client_id], client_id) for client_id in CLIENT_IDS
-        ]
+        st.session_state.default_client_snapshot = _build_default_client_snapshot()
 
 
 def _inject_styles() -> None:
@@ -1009,11 +1013,16 @@ def _render_client_cards(client_updates: list[dict]) -> None:
 
     for update in client_updates:
         parameter_values = [float(value) for value in update["parameters"][: len(stat_labels)]]
+        parameter_count = len(update["parameters"])
+        mismatch_note = ""
         if len(parameter_values) < len(stat_labels):
             parameter_values.extend([0.0] * (len(stat_labels) - len(parameter_values)))
-        if len(update["parameters"]) != len(stat_labels):
+        if parameter_count != len(stat_labels):
             _append_log(
-                f"warning: client {update['client_id']} reported {len(update['parameters'])} parameters"
+                f"warning: client {update['client_id']} reported {parameter_count} parameters; expected {len(stat_labels)}"
+            )
+            mismatch_note = (
+                '<div class="client-subtitle">Parameter vector adjusted to preserve dashboard rendering.</div>'
             )
         rows: list[str] = []
         for label, metric_value in zip(stat_labels, parameter_values):
@@ -1037,6 +1046,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
                     <div>
                         <div class="client-name">Client {_escape_html(update['client_id'])}</div>
                         <div class="client-subtitle">Compact local metrics from the current shard update.</div>
+                        {mismatch_note}
                     </div>
                     <div class="client-badge">{int(update['sample_count'])} samples</div>
                 </div>
@@ -1225,7 +1235,7 @@ def _render_result_section(result: dict) -> None:
 
 
 def _render_logs() -> None:
-    log_lines = st.session_state.activity_log[-24:]
+    log_lines = st.session_state.activity_log[-MAX_VISIBLE_LOG_LINES:]
     log_text = "\n".join(log_lines) if log_lines else "[idle] Waiting for a detection run..."
     st.markdown(
         f"""
@@ -1292,6 +1302,7 @@ def _run_demo(message: str) -> None:
     progress.progress(100, text="Workflow complete")
 
     if result is None:
+        _append_log("warning: score phase fallback triggered")
         result = score_message(message, aggregated_state)
         _append_log(f"prediction {result['prediction']} at {result['confidence']}% confidence")
 
@@ -1330,7 +1341,7 @@ def main() -> None:
                 "Message to classify",
                 key="message_input",
                 placeholder="Example: Congratulations, click now to claim your free reward.",
-                label_visibility="collapsed",
+                label_visibility="visible",
             )
             _, center_column, _ = st.columns([1, 1.2, 1])
             with center_column:
