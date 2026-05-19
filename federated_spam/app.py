@@ -157,6 +157,7 @@ def _inject_styles() -> None:
         .tone-warn { color: #f3c46d; }
         .tone-danger { color: #ff8a8a; }
         .tone-accent { color: #8eb7ff; }
+        .tone-neutral { color: #d7e2f0; }
 
         .sidebar-note {
             color: #9db0c8;
@@ -548,6 +549,12 @@ def _inject_styles() -> None:
             border: 1px solid rgba(239, 107, 107, 0.24);
         }
 
+        .pill-neutral {
+            color: #e8f0fb;
+            background: rgba(148, 163, 184, 0.14);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
         .result-title {
             color: #f8fbff;
             font-size: 1.24rem;
@@ -896,7 +903,7 @@ def _tone_class(level: str) -> str:
         "LOW": "pill-good",
         "MEDIUM": "pill-warn",
         "HIGH": "pill-danger",
-    }.get(level, "pill-good")
+    }.get(level, "pill-neutral")
 
 
 def _sidebar_value_tone(level: str) -> str:
@@ -904,7 +911,7 @@ def _sidebar_value_tone(level: str) -> str:
         "LOW": "tone-good",
         "MEDIUM": "tone-warn",
         "HIGH": "tone-danger",
-    }.get(level, "tone-good")
+    }.get(level, "tone-neutral")
 
 
 def _load_client_snapshot() -> list[dict]:
@@ -997,9 +1004,11 @@ def _render_client_cards(client_updates: list[dict]) -> None:
     ]
 
     for update in client_updates:
+        parameter_values = [float(value) for value in update["parameters"][: len(stat_labels)]]
+        if len(parameter_values) < len(stat_labels):
+            parameter_values.extend([0.0] * (len(stat_labels) - len(parameter_values)))
         rows: list[str] = []
-        for label, value in zip(stat_labels, update["parameters"], strict=True):
-            metric_value = float(value)
+        for label, metric_value in zip(stat_labels, parameter_values):
             width = max(0, min(int(metric_value * 100), 100))
             rows.append(
                 f"""
@@ -1276,6 +1285,7 @@ def _run_demo(message: str) -> None:
 
     if result is None:
         result = score_message(message, aggregated_state)
+        _append_log(f"prediction {result['prediction']} at {result['confidence']}% confidence")
 
     st.session_state.latest_result = result
     st.session_state.latest_client_updates = client_updates
@@ -1314,8 +1324,7 @@ def main() -> None:
                 placeholder="Example: Congratulations, click now to claim your free reward.",
                 label_visibility="collapsed",
             )
-            button_left, button_center, button_right = st.columns([1, 1.2, 1])
-            with button_center:
+            with st.columns([1, 1.2, 1])[1]:
                 run_clicked = st.form_submit_button("Run Detection", use_container_width=True)
 
     with top_right:
