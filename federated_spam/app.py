@@ -900,7 +900,7 @@ def _inject_styles() -> None:
 
 
 def _escape_html(value: object) -> str:
-    return html.escape(str(value), quote=True)
+    return html.escape(str(value), quote=False)
 
 
 def _append_log(message: str) -> None:
@@ -1019,7 +1019,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
             parameter_values.extend([0.0] * (len(stat_labels) - len(parameter_values)))
         if parameter_count != len(stat_labels):
             _append_log(
-                f"warning: client {update['client_id']} reported {parameter_count} parameters; expected {len(stat_labels)}"
+                f"Warning: client {update['client_id']} reported {parameter_count} parameters; expected {len(stat_labels)}"
             )
             mismatch_note = (
                 '<div class="client-subtitle">Parameter vector adjusted to preserve dashboard rendering.</div>'
@@ -1236,7 +1236,7 @@ def _render_result_section(result: dict) -> None:
 
 def _render_logs() -> None:
     log_lines = st.session_state.activity_log[-MAX_VISIBLE_LOG_LINES:]
-    log_text = "\n".join(log_lines) if log_lines else "[idle] Waiting for a detection run..."
+    log_text = "\n".join(log_lines) if log_lines else "[system] Waiting for a detection run..."
     st.markdown(
         f"""
         <div class="section-label">Live activity feed</div>
@@ -1302,7 +1302,7 @@ def _run_demo(message: str) -> None:
     progress.progress(100, text="Workflow complete")
 
     if result is None:
-        _append_log("warning: score phase fallback triggered")
+        _append_log("Warning: score phase fallback triggered")
         result = score_message(message, aggregated_state)
         _append_log(f"prediction {result['prediction']} at {result['confidence']}% confidence")
 
