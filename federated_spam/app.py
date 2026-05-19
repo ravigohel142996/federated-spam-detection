@@ -1,4 +1,4 @@
-"""Modern Streamlit dashboard for the federated spam detection demo."""
+"""Streamlit dashboard for the federated spam detection demo."""
 
 from __future__ import annotations
 
@@ -22,884 +22,41 @@ from model import (
 DATASET_PATH = Path(__file__).parent / "dataset" / "spam.csv"
 MAX_VISIBLE_LOG_LINES = 24
 
+# ---------------------------------------------------------------------------
+# Data helpers
+# ---------------------------------------------------------------------------
+
 
 @st.cache_data(show_spinner=False)
 def _build_default_client_snapshot() -> list[dict]:
     frame = load_spam_dataset(DATASET_PATH)
     shards = split_dataset_for_clients(frame, CLIENT_IDS)
-    return [client_update(shards[client_id], client_id) for client_id in CLIENT_IDS]
+    return [client_update(shards[cid], cid) for cid in CLIENT_IDS]
 
 
 def _initialize_state() -> None:
-    if "global_state" not in st.session_state:
-        st.session_state.global_state = build_model()["global_state"]
-    if "activity_log" not in st.session_state:
-        st.session_state.activity_log = []
-    if "round_number" not in st.session_state:
-        st.session_state.round_number = 0
-    if "threat_level" not in st.session_state:
-        st.session_state.threat_level = "LOW"
-    if "latest_result" not in st.session_state:
-        st.session_state.latest_result = None
-    if "latest_client_updates" not in st.session_state:
-        st.session_state.latest_client_updates = []
+    defaults = {
+        "global_state": build_model()["global_state"],
+        "activity_log": [],
+        "round_number": 0,
+        "threat_level": "LOW",
+        "latest_result": None,
+        "latest_client_updates": [],
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
     if "default_client_snapshot" not in st.session_state:
         st.session_state.default_client_snapshot = _build_default_client_snapshot()
 
 
-def _inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        :root {
-            --bg-primary: #eef2f7;
-            --bg-secondary: #f7f9fc;
-            --surface: rgba(255, 255, 255, 0.82);
-            --surface-border: rgba(148, 163, 184, 0.18);
-            --surface-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
-            --card-bg: linear-gradient(180deg, #102033 0%, #0d1b2b 100%);
-            --card-border: rgba(148, 163, 184, 0.16);
-            --card-shadow: 0 20px 40px rgba(2, 8, 23, 0.16);
-            --text-main: #0f172a;
-            --text-soft: #475569;
-            --text-muted: #64748b;
-            --text-on-dark: #e5edf7;
-            --text-on-dark-soft: #a8b6c9;
-            --accent: #5b8def;
-        }
+# ---------------------------------------------------------------------------
+# Small utilities
+# ---------------------------------------------------------------------------
 
-        html, body, [class*="css"] {
-            font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", "Segoe UI", sans-serif;
-        }
 
-        .stApp {
-            background:
-                radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 28%),
-                radial-gradient(circle at top right, rgba(191, 219, 254, 0.20), transparent 22%),
-                linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%) !important;
-            color: var(--text-main);
-        }
-
-        [data-testid="stAppViewContainer"] > .main {
-            background: transparent;
-        }
-
-        .main .block-container {
-            max-width: 1320px;
-            padding-top: 2.1rem;
-            padding-bottom: 3rem;
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #0d1726 0%, #132238 100%);
-            border-right: 1px solid rgba(148, 163, 184, 0.12);
-        }
-
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-        [data-testid="stSidebar"] .st-emotion-cache-10trblm,
-        [data-testid="stSidebar"] .st-emotion-cache-16txtl3 {
-            color: #e5edf7;
-        }
-
-        [data-testid="stSidebarNav"] {
-            display: none;
-        }
-
-        .sidebar-shell {
-            padding-top: 0.25rem;
-        }
-
-        .sidebar-kicker {
-            color: #8ea4c3;
-            font-size: 0.72rem;
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
-            margin-bottom: 0.6rem;
-        }
-
-        .sidebar-title {
-            color: #f8fbff;
-            font-size: 1.35rem;
-            font-weight: 600;
-            letter-spacing: -0.02em;
-            margin-bottom: 1.1rem;
-        }
-
-        .sidebar-panel {
-            background: rgba(15, 23, 42, 0.58);
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            border-radius: 20px;
-            padding: 1rem 1rem 0.15rem;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
-            margin-bottom: 0.95rem;
-        }
-
-        .sidebar-metric {
-            padding-bottom: 0.85rem;
-            margin-bottom: 0.85rem;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-        }
-
-        .sidebar-metric:last-child {
-            margin-bottom: 0;
-            border-bottom: 0;
-        }
-
-        .sidebar-label {
-            color: #8ea4c3;
-            font-size: 0.7rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 0.45rem;
-        }
-
-        .sidebar-value {
-            color: #f8fbff;
-            font-size: 1.42rem;
-            font-weight: 600;
-            line-height: 1.1;
-            letter-spacing: -0.03em;
-        }
-
-        .tone-good { color: #73d6a8; }
-        .tone-warn { color: #f3c46d; }
-        .tone-danger { color: #ff8a8a; }
-        .tone-accent { color: #8eb7ff; }
-        .tone-neutral { color: #d7e2f0; }
-
-        .sidebar-note {
-            color: #9db0c8;
-            font-size: 0.86rem;
-            line-height: 1.6;
-            margin: 0;
-        }
-
-        .hero-card,
-        .surface-card,
-        .empty-state,
-        div[data-testid="stForm"] {
-            background: var(--surface);
-            border: 1px solid var(--surface-border);
-            box-shadow: var(--surface-shadow);
-            backdrop-filter: blur(18px);
-        }
-
-        .hero-card {
-            border-radius: 28px;
-            padding: 1.5rem 1.55rem;
-            margin-bottom: 1.1rem;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .hero-card::after {
-            content: "";
-            position: absolute;
-            top: -3.5rem;
-            right: -2rem;
-            width: 13rem;
-            height: 13rem;
-            background: radial-gradient(circle, rgba(91, 141, 239, 0.14), transparent 70%);
-            pointer-events: none;
-        }
-
-        div[data-testid="stForm"] {
-            border-radius: 24px;
-            padding: 1.2rem;
-        }
-
-        .eyebrow {
-            color: var(--accent);
-            font-size: 0.74rem;
-            font-weight: 600;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            margin-bottom: 0.8rem;
-        }
-
-        .hero-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.9fr);
-            gap: 1.4rem;
-            align-items: end;
-        }
-
-        .hero-title {
-            margin: 0;
-            font-size: clamp(2rem, 3vw, 3rem);
-            line-height: 1.02;
-            letter-spacing: -0.05em;
-            color: var(--text-main);
-            font-weight: 700;
-        }
-
-        .hero-copy {
-            color: var(--text-soft);
-            font-size: 1rem;
-            line-height: 1.75;
-            max-width: 50rem;
-            margin: 0.9rem 0 0;
-        }
-
-        .hero-meta-card {
-            background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(244,247,252,0.86));
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 22px;
-            padding: 1rem 1.05rem;
-        }
-
-        .hero-meta-label {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin-bottom: 0.35rem;
-        }
-
-        .hero-meta-value {
-            color: var(--text-main);
-            font-size: 1.7rem;
-            font-weight: 650;
-            letter-spacing: -0.04em;
-            margin-bottom: 0.4rem;
-        }
-
-        .hero-meta-copy {
-            color: var(--text-soft);
-            font-size: 0.88rem;
-            line-height: 1.6;
-            margin: 0;
-        }
-
-        .surface-card {
-            border-radius: 24px;
-            padding: 1.25rem;
-            height: 100%;
-        }
-
-        .card-kicker {
-            font-size: 0.72rem;
-            color: var(--text-muted);
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            margin-bottom: 0.65rem;
-        }
-
-        .card-title {
-            color: var(--text-main);
-            font-size: 1.12rem;
-            font-weight: 650;
-            letter-spacing: -0.03em;
-            margin-bottom: 0.45rem;
-        }
-
-        .card-copy,
-        .research-list,
-        .empty-copy {
-            color: var(--text-soft);
-            font-size: 0.95rem;
-            line-height: 1.72;
-            margin: 0;
-        }
-
-        .research-list {
-            list-style: none;
-            padding: 0;
-            margin: 1rem 0 0;
-        }
-
-        .research-list li {
-            display: flex;
-            gap: 0.8rem;
-            align-items: flex-start;
-            padding: 0.7rem 0;
-            border-top: 1px solid rgba(148, 163, 184, 0.14);
-        }
-
-        .research-list li:first-child {
-            border-top: 0;
-            padding-top: 0;
-        }
-
-        .research-index {
-            color: var(--accent);
-            font-weight: 650;
-            min-width: 1.5rem;
-        }
-
-        .section-label {
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            margin: 1.6rem 0 0.65rem;
-        }
-
-        .section-title {
-            color: var(--text-main);
-            font-size: 1.3rem;
-            font-weight: 650;
-            letter-spacing: -0.03em;
-            margin: 0 0 0.25rem;
-        }
-
-        .section-copy {
-            color: var(--text-soft);
-            font-size: 0.93rem;
-            line-height: 1.7;
-            margin: 0 0 1rem;
-        }
-
-        .client-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 1rem;
-            margin-top: 0.9rem;
-        }
-
-        .client-card,
-        .result-card,
-        .workflow-card,
-        .activity-card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            box-shadow: var(--card-shadow);
-            color: var(--text-on-dark);
-        }
-
-        .client-card {
-            border-radius: 24px;
-            padding: 1.1rem;
-            min-height: 280px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 1rem;
-            overflow: hidden;
-        }
-
-        .client-top {
-            display: flex;
-            justify-content: space-between;
-            gap: 0.9rem;
-            align-items: flex-start;
-        }
-
-        .client-name {
-            font-size: 1rem;
-            font-weight: 650;
-            color: #f8fbff;
-            letter-spacing: -0.03em;
-            margin-bottom: 0.2rem;
-        }
-
-        .client-subtitle {
-            color: var(--text-on-dark-soft);
-            font-size: 0.82rem;
-            line-height: 1.5;
-        }
-
-        .client-badge {
-            color: #dce8f7;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 999px;
-            padding: 0.38rem 0.72rem;
-            font-size: 0.75rem;
-            white-space: nowrap;
-        }
-
-        .client-stats {
-            display: grid;
-            gap: 0.78rem;
-        }
-
-        .metric-line {
-            display: grid;
-            gap: 0.35rem;
-        }
-
-        .metric-head {
-            display: flex;
-            justify-content: space-between;
-            gap: 0.75rem;
-            align-items: center;
-        }
-
-        .metric-label {
-            color: #c8d5e6;
-            font-size: 0.79rem;
-            line-height: 1.4;
-            min-width: 0;
-            flex: 1;
-        }
-
-        .metric-value {
-            color: #f8fbff;
-            font-size: 0.82rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .mini-track,
-        .meter-track,
-        .result-progress {
-            width: 100%;
-            overflow: hidden;
-            background: rgba(255, 255, 255, 0.08);
-            border-radius: 999px;
-        }
-
-        .mini-track,
-        .meter-track {
-            height: 6px;
-        }
-
-        .result-progress {
-            height: 7px;
-        }
-
-        .mini-fill,
-        .meter-fill,
-        .result-fill {
-            display: block;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, #7eb3ff 0%, #5b8def 100%);
-        }
-
-        .result-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr);
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .result-card,
-        .workflow-card,
-        .activity-card {
-            border-radius: 26px;
-            padding: 1.2rem;
-        }
-
-        .result-top {
-            display: flex;
-            justify-content: space-between;
-            gap: 1rem;
-            align-items: flex-start;
-            margin-bottom: 1rem;
-        }
-
-        .result-kicker,
-        .workflow-kicker,
-        .activity-kicker {
-            color: #8ea4c3;
-            font-size: 0.72rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            margin-bottom: 0.55rem;
-        }
-
-        .prediction-badge,
-        .tone-pill,
-        .keyword-pill,
-        .workflow-pill {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 999px;
-            font-weight: 600;
-            line-height: 1;
-        }
-
-        .prediction-badge {
-            padding: 0.58rem 0.92rem;
-            font-size: 0.8rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-        }
-
-        .prediction-spam {
-            color: #fff6f6;
-            background: rgba(239, 107, 107, 0.16);
-            border: 1px solid rgba(239, 107, 107, 0.26);
-        }
-
-        .prediction-ham {
-            color: #effff7;
-            background: rgba(53, 179, 126, 0.14);
-            border: 1px solid rgba(53, 179, 126, 0.24);
-        }
-
-        .tone-pill {
-            padding: 0.52rem 0.84rem;
-            font-size: 0.75rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            white-space: nowrap;
-        }
-
-        .pill-good {
-            color: #eafff5;
-            background: rgba(53, 179, 126, 0.16);
-            border: 1px solid rgba(53, 179, 126, 0.22);
-        }
-
-        .pill-warn {
-            color: #fff7df;
-            background: rgba(224, 168, 72, 0.15);
-            border: 1px solid rgba(224, 168, 72, 0.24);
-        }
-
-        .pill-danger {
-            color: #fff2f2;
-            background: rgba(239, 107, 107, 0.16);
-            border: 1px solid rgba(239, 107, 107, 0.24);
-        }
-
-        .pill-neutral {
-            color: #e8f0fb;
-            background: rgba(148, 163, 184, 0.14);
-            border: 1px solid rgba(148, 163, 184, 0.22);
-        }
-
-        .result-title {
-            color: #f8fbff;
-            font-size: 1.24rem;
-            font-weight: 650;
-            letter-spacing: -0.03em;
-            margin: 0 0 0.35rem;
-        }
-
-        .result-copy,
-        .workflow-copy,
-        .activity-copy {
-            color: var(--text-on-dark-soft);
-            font-size: 0.9rem;
-            line-height: 1.7;
-            margin: 0;
-        }
-
-        .result-confidence {
-            display: grid;
-            gap: 0.8rem;
-            padding: 1rem;
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .confidence-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 1rem;
-            align-items: baseline;
-        }
-
-        .confidence-value {
-            color: #f8fbff;
-            font-size: clamp(2.1rem, 3vw, 2.9rem);
-            font-weight: 700;
-            letter-spacing: -0.06em;
-            line-height: 1;
-        }
-
-        .result-metric-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.8rem;
-            margin-top: 0.9rem;
-        }
-
-        .probability-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 20px;
-            padding: 0.95rem;
-        }
-
-        .probability-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.55rem;
-        }
-
-        .probability-label {
-            color: #c8d5e6;
-            font-size: 0.8rem;
-            line-height: 1.45;
-        }
-
-        .probability-value {
-            color: #f8fbff;
-            font-size: 1.2rem;
-            font-weight: 650;
-            letter-spacing: -0.03em;
-        }
-
-        .workflow-card {
-            display: grid;
-            gap: 1rem;
-        }
-
-        .workflow-flow {
-            display: grid;
-            gap: 0.75rem;
-        }
-
-        .workflow-step {
-            display: grid;
-            grid-template-columns: 38px minmax(0, 1fr);
-            gap: 0.8rem;
-            align-items: start;
-            padding: 0.82rem 0;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .workflow-step:first-child {
-            border-top: 0;
-            padding-top: 0;
-        }
-
-        .workflow-index {
-            width: 38px;
-            height: 38px;
-            border-radius: 14px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.82rem;
-            font-weight: 650;
-            color: #f8fbff;
-            background: rgba(91, 141, 239, 0.18);
-            border: 1px solid rgba(91, 141, 239, 0.24);
-        }
-
-        .workflow-step-title {
-            color: #f8fbff;
-            font-size: 0.92rem;
-            font-weight: 600;
-            margin-bottom: 0.22rem;
-        }
-
-        .workflow-step-copy {
-            color: var(--text-on-dark-soft);
-            font-size: 0.84rem;
-            line-height: 1.6;
-        }
-
-        .keyword-wrap {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-
-        .keyword-pill,
-        .workflow-pill {
-            color: #dce8f7;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 0.46rem 0.72rem;
-            font-size: 0.78rem;
-        }
-
-        .activity-card {
-            margin-top: 1rem;
-        }
-
-        .activity-window {
-            margin-top: 0.95rem;
-            max-height: 270px;
-            overflow-y: auto;
-            padding: 1rem;
-            border-radius: 18px;
-            background: rgba(2, 8, 23, 0.45);
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            color: #d6e2f0;
-            font-family: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
-            font-size: 0.82rem;
-            line-height: 1.75;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .empty-state {
-            border-radius: 26px;
-            padding: 1.35rem;
-            margin-top: 1rem;
-        }
-
-        .empty-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.9fr);
-            gap: 1rem;
-        }
-
-        .empty-stats {
-            display: grid;
-            gap: 0.8rem;
-        }
-
-        .empty-stat {
-            border-radius: 18px;
-            padding: 0.95rem 1rem;
-            background: rgba(255, 255, 255, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.12);
-        }
-
-        .empty-stat-label {
-            color: var(--text-muted);
-            font-size: 0.74rem;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            margin-bottom: 0.3rem;
-        }
-
-        .empty-stat-value {
-            color: var(--text-main);
-            font-size: 1.25rem;
-            font-weight: 650;
-            letter-spacing: -0.03em;
-        }
-
-        .stTextArea textarea {
-            min-height: 150px !important;
-            border-radius: 18px !important;
-            border: 1px solid rgba(148, 163, 184, 0.2) !important;
-            background: rgba(255, 255, 255, 0.88) !important;
-            color: var(--text-main) !important;
-            line-height: 1.7 !important;
-            font-size: 0.97rem !important;
-            padding: 1rem 1.05rem !important;
-            box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
-        }
-
-        .stTextArea textarea:focus {
-            border-color: rgba(91, 141, 239, 0.5) !important;
-            box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.2) !important;
-        }
-
-        div[data-testid="stTextArea"] label {
-            color: var(--text-soft) !important;
-            font-size: 0.9rem !important;
-            font-weight: 500 !important;
-        }
-
-        div[data-testid="stButton"],
-        div[data-testid="stFormSubmitButton"] {
-            display: flex;
-            justify-content: center;
-        }
-
-        div[data-testid="stButton"] > button,
-        div[data-testid="stFormSubmitButton"] > button {
-            width: 100%;
-            max-width: 260px;
-            min-height: 50px;
-            border-radius: 999px;
-            border: 0;
-            color: #f8fbff;
-            font-size: 0.98rem;
-            font-weight: 650;
-            letter-spacing: -0.01em;
-            background: linear-gradient(135deg, #6a93f7 0%, #507fe7 100%);
-            box-shadow: 0 14px 28px rgba(80, 127, 231, 0.26);
-            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-        }
-
-        div[data-testid="stButton"] > button:hover,
-        div[data-testid="stFormSubmitButton"] > button:hover {
-            transform: translateY(-1px);
-            filter: brightness(1.03);
-            box-shadow: 0 18px 30px rgba(80, 127, 231, 0.28);
-        }
-
-        div[data-testid="stButton"] > button:focus,
-        div[data-testid="stFormSubmitButton"] > button:focus {
-            box-shadow: 0 0 0 0.2rem rgba(91, 141, 239, 0.22), 0 18px 30px rgba(80, 127, 231, 0.28);
-        }
-
-        .stProgress > div > div {
-            height: 0.38rem;
-            border-radius: 999px;
-            background: rgba(148, 163, 184, 0.22);
-        }
-
-        .stProgress > div > div > div {
-            border-radius: 999px;
-            background: linear-gradient(90deg, #7eb3ff 0%, #5b8def 100%);
-        }
-
-        [data-testid="stStatusWidget"] {
-            border-radius: 20px;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            box-shadow: 0 18px 30px rgba(15, 23, 42, 0.06);
-        }
-
-        .stAlert {
-            border-radius: 18px;
-        }
-
-        @media (max-width: 1180px) {
-            .client-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .result-grid,
-            .hero-grid,
-            .empty-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        @media (max-width: 760px) {
-            .main .block-container {
-                padding-top: 1.2rem;
-                padding-left: 0.8rem;
-                padding-right: 0.8rem;
-            }
-
-            .hero-card,
-            .surface-card,
-            .result-card,
-            .workflow-card,
-            .activity-card,
-            .empty-state,
-            .client-card,
-            div[data-testid="stForm"] {
-                border-radius: 22px;
-            }
-
-            .client-grid,
-            .result-metric-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .result-top,
-            .confidence-row,
-            .probability-head,
-            .client-top,
-            .metric-head {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            div[data-testid="stButton"] > button,
-            div[data-testid="stFormSubmitButton"] > button {
-                max-width: none;
-            }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _escape_html(value: object) -> str:
+def _esc(value: object) -> str:
+    """HTML-escape a value for safe inline injection."""
     return html.escape(str(value), quote=False)
 
 
@@ -908,65 +65,867 @@ def _append_log(message: str) -> None:
     st.session_state.activity_log.append(f"[{timestamp}] {message}")
 
 
-def _tone_class(level: str) -> str:
-    return {
-        "LOW": "pill-good",
-        "MEDIUM": "pill-warn",
-        "HIGH": "pill-danger",
-    }.get(level, "pill-neutral")
+def _threat_pill_class(level: str) -> str:
+    return {"LOW": "pill-good", "MEDIUM": "pill-warn", "HIGH": "pill-danger"}.get(
+        level, "pill-neutral"
+    )
 
 
-def _sidebar_value_tone(level: str) -> str:
-    return {
-        "LOW": "tone-good",
-        "MEDIUM": "tone-warn",
-        "HIGH": "tone-danger",
-    }.get(level, "tone-neutral")
+def _threat_tone_class(level: str) -> str:
+    return {"LOW": "tone-good", "MEDIUM": "tone-warn", "HIGH": "tone-danger"}.get(
+        level, "tone-neutral"
+    )
 
 
 def _load_client_snapshot() -> list[dict]:
-    if st.session_state.latest_client_updates:
-        return st.session_state.latest_client_updates
+    return st.session_state.latest_client_updates or st.session_state.default_client_snapshot
 
-    return st.session_state.default_client_snapshot
+
+# ---------------------------------------------------------------------------
+# Global styles  (one block, no duplicates)
+# ---------------------------------------------------------------------------
+
+
+def _inject_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        /* ── Variables ─────────────────────────────────────────────────── */
+        :root {
+            --bg:          #F5F7FB;
+            --surface:     #ffffff;
+            --surface-b:   rgba(148,163,184,0.18);
+            --surface-sh:  0 2px 12px rgba(15,23,42,0.07), 0 1px 3px rgba(15,23,42,0.04);
+            --dark-bg:     linear-gradient(160deg,#0f1e2e 0%,#0d1b2a 100%);
+            --dark-b:      rgba(148,163,184,0.13);
+            --dark-sh:     0 4px 20px rgba(2,8,23,0.18);
+            --txt:         #0f172a;
+            --txt-soft:    #475569;
+            --txt-muted:   #64748b;
+            --txt-dk:      #e5edf7;
+            --txt-dk-soft: #a8b6c9;
+            --accent:      #4f7fe4;
+            --radius-lg:   20px;
+            --radius-md:   14px;
+            --radius-sm:   10px;
+        }
+
+        /* ── Base font ──────────────────────────────────────────────────── */
+        html, body, [class*="css"] {
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
+                         "SF Pro Display", sans-serif !important;
+        }
+
+        /* ── App background ─────────────────────────────────────────────── */
+        .stApp {
+            background-color: var(--bg) !important;
+            color: var(--txt);
+        }
+
+        [data-testid="stAppViewContainer"] > .main {
+            background: transparent;
+        }
+
+        .main .block-container {
+            max-width: 1300px;
+            padding: 2rem 1.25rem 3rem;
+        }
+
+        /* ── Sidebar ────────────────────────────────────────────────────── */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0d1726 0%, #132238 100%) !important;
+            border-right: 1px solid rgba(148,163,184,0.10);
+        }
+
+        [data-testid="stSidebar"] * {
+            color: #e5edf7;
+        }
+
+        [data-testid="stSidebarNav"] { display: none; }
+
+        .sb-kicker {
+            color: #8ea4c3;
+            font-size: 0.7rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin: 0 0 0.5rem;
+        }
+
+        .sb-title {
+            color: #f8fbff;
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+            margin: 0 0 1.25rem;
+        }
+
+        .sb-desc {
+            color: #7e96b4;
+            font-size: 0.82rem;
+            line-height: 1.65;
+            margin: 0 0 1.1rem;
+        }
+
+        .sb-panel {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(148,163,184,0.10);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 0.9rem 0.1rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .sb-row {
+            padding-bottom: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(148,163,184,0.10);
+        }
+
+        .sb-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .sb-label {
+            color: #7e96b4;
+            font-size: 0.68rem;
+            letter-spacing: 0.13em;
+            text-transform: uppercase;
+            margin-bottom: 0.3rem;
+        }
+
+        .sb-value {
+            color: #f8fbff;
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .sb-footer {
+            color: #566e8a;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            margin-top: 1rem;
+        }
+
+        .tone-good   { color: #5ed4a0 !important; }
+        .tone-warn   { color: #f0c060 !important; }
+        .tone-danger { color: #f07070 !important; }
+        .tone-accent { color: #7fb3ff !important; }
+
+        /* ── Hero card ──────────────────────────────────────────────────── */
+        .hero-wrap {
+            background: var(--surface);
+            border: 1px solid var(--surface-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--surface-sh);
+            padding: 1.5rem 1.6rem 1.4rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .hero-inner {
+            display: grid;
+            grid-template-columns: 1fr 260px;
+            gap: 1.5rem;
+            align-items: end;
+        }
+
+        .hero-eyebrow {
+            color: var(--accent);
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            margin: 0 0 0.75rem;
+        }
+
+        .hero-title {
+            font-size: clamp(1.7rem, 2.8vw, 2.5rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 1.08;
+            color: var(--txt);
+            margin: 0 0 0.8rem;
+        }
+
+        .hero-sub {
+            color: var(--txt-soft);
+            font-size: 0.97rem;
+            line-height: 1.72;
+            margin: 0;
+            max-width: 46rem;
+        }
+
+        .signal-card {
+            background: #f8fafd;
+            border: 1px solid var(--surface-b);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.1rem 0.9rem;
+        }
+
+        .signal-label {
+            color: var(--txt-muted);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin: 0 0 0.3rem;
+        }
+
+        .signal-value {
+            color: var(--txt);
+            font-size: 2.1rem;
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            line-height: 1;
+            margin: 0 0 0.45rem;
+        }
+
+        .signal-note {
+            color: var(--txt-soft);
+            font-size: 0.83rem;
+            line-height: 1.55;
+            margin: 0;
+        }
+
+        /* ── Input workspace (light card wrapping Streamlit form) ────────── */
+        .workspace-card {
+            background: var(--surface);
+            border: 1px solid var(--surface-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--surface-sh);
+            padding: 1.25rem 1.3rem 1.1rem;
+            height: 100%;
+        }
+
+        .card-eyebrow {
+            color: var(--txt-muted);
+            font-size: 0.7rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            margin: 0 0 0.45rem;
+        }
+
+        .card-heading {
+            color: var(--txt);
+            font-size: 1.05rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.35rem;
+        }
+
+        .card-body {
+            color: var(--txt-soft);
+            font-size: 0.9rem;
+            line-height: 1.7;
+            margin: 0 0 1rem;
+        }
+
+        /* ── Research summary card ──────────────────────────────────────── */
+        .research-card {
+            background: var(--surface);
+            border: 1px solid var(--surface-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--surface-sh);
+            padding: 1.25rem 1.3rem;
+            height: 100%;
+        }
+
+        .research-list {
+            list-style: none;
+            padding: 0;
+            margin: 0.9rem 0 0;
+        }
+
+        .research-list li {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+            padding: 0.65rem 0;
+            border-top: 1px solid rgba(148,163,184,0.12);
+            color: var(--txt-soft);
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+
+        .research-list li:first-child {
+            border-top: none;
+            padding-top: 0;
+        }
+
+        .ri {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 0.8rem;
+            min-width: 1.4rem;
+            padding-top: 0.05rem;
+        }
+
+        /* ── Section headers ────────────────────────────────────────────── */
+        .sec-label {
+            color: var(--txt-muted);
+            font-size: 0.7rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            margin: 1.8rem 0 0.5rem;
+        }
+
+        .sec-title {
+            color: var(--txt);
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            margin: 0 0 0.2rem;
+        }
+
+        .sec-sub {
+            color: var(--txt-soft);
+            font-size: 0.88rem;
+            line-height: 1.65;
+            margin: 0 0 0.9rem;
+        }
+
+        /* ── Client cards ───────────────────────────────────────────────── */
+        .client-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
+
+        .client-card {
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--dark-sh);
+            padding: 1rem 1.05rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+        }
+
+        .cc-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .cc-name {
+            color: #f8fbff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.15rem;
+        }
+
+        .cc-sub {
+            color: var(--txt-dk-soft);
+            font-size: 0.78rem;
+            line-height: 1.45;
+        }
+
+        .cc-badge {
+            color: #cdd9eb;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 999px;
+            padding: 0.28rem 0.65rem;
+            font-size: 0.72rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .cc-stats { display: grid; gap: 0.65rem; }
+
+        .m-row {
+            display: grid;
+            gap: 0.28rem;
+        }
+
+        .m-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .m-label {
+            color: #b0c4d8;
+            font-size: 0.76rem;
+        }
+
+        .m-val {
+            color: #f8fbff;
+            font-size: 0.77rem;
+            font-weight: 600;
+        }
+
+        .bar-track {
+            width: 100%;
+            height: 5px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #7eb3ff 0%, #4f7fe4 100%);
+        }
+
+        /* ── Result section ─────────────────────────────────────────────── */
+        .result-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
+            gap: 0.85rem;
+        }
+
+        .result-card, .workflow-card {
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--dark-sh);
+            padding: 1.15rem 1.2rem;
+        }
+
+        .dk-kicker {
+            color: #7e96b4;
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            margin: 0 0 0.5rem;
+        }
+
+        .result-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .pred-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.5rem 1rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .pred-spam {
+            color: #ffe4e4;
+            background: rgba(239,107,107,0.14);
+            border: 1px solid rgba(239,107,107,0.24);
+        }
+
+        .pred-ham {
+            color: #e4fff2;
+            background: rgba(53,179,126,0.12);
+            border: 1px solid rgba(53,179,126,0.22);
+        }
+
+        .threat-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.42rem 0.8rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .pill-good   { color: #e4fff2; background: rgba(53,179,126,0.14); border: 1px solid rgba(53,179,126,0.22); }
+        .pill-warn   { color: #fff8e1; background: rgba(224,168,72,0.13); border: 1px solid rgba(224,168,72,0.22); }
+        .pill-danger { color: #fff2f2; background: rgba(239,107,107,0.14); border: 1px solid rgba(239,107,107,0.22); }
+        .pill-neutral { color: #e8f0fb; background: rgba(148,163,184,0.13); border: 1px solid rgba(148,163,184,0.22); }
+
+        .conf-block {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius-md);
+            padding: 0.9rem 1rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .conf-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.75rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .conf-label {
+            color: #f8fbff;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .conf-sub {
+            color: var(--txt-dk-soft);
+            font-size: 0.8rem;
+            margin: 0;
+        }
+
+        .conf-pct {
+            color: #f8fbff;
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            line-height: 1;
+        }
+
+        .conf-track {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .conf-fill {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #7eb3ff 0%, #4f7fe4 100%);
+        }
+
+        .prob-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.65rem;
+        }
+
+        .prob-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 0.8rem;
+        }
+
+        .prob-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.45rem;
+        }
+
+        .prob-label { color: #a8b6c9; font-size: 0.76rem; }
+
+        .prob-val {
+            color: #f8fbff;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .meter-track {
+            width: 100%;
+            height: 5px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .meter-fill {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #7eb3ff 0%, #4f7fe4 100%);
+        }
+
+        /* ── Workflow card ───────────────────────────────────────────────── */
+        .workflow-card { display: flex; flex-direction: column; gap: 0.9rem; }
+
+        .wf-title {
+            color: #f8fbff;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.2rem;
+        }
+
+        .wf-sub {
+            color: var(--txt-dk-soft);
+            font-size: 0.82rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .wf-steps { display: flex; flex-direction: column; }
+
+        .wf-step {
+            display: grid;
+            grid-template-columns: 32px minmax(0, 1fr);
+            gap: 0.7rem;
+            align-items: start;
+            padding: 0.7rem 0;
+            border-top: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .wf-step:first-child { border-top: none; padding-top: 0; }
+
+        .wf-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #f8fbff;
+            background: rgba(79,127,228,0.18);
+            border: 1px solid rgba(79,127,228,0.28);
+            flex-shrink: 0;
+        }
+
+        .wf-step-title {
+            color: #f8fbff;
+            font-size: 0.87rem;
+            font-weight: 600;
+            margin: 0 0 0.18rem;
+        }
+
+        .wf-step-body {
+            color: var(--txt-dk-soft);
+            font-size: 0.8rem;
+            line-height: 1.55;
+        }
+
+        .kw-section { margin-top: 0.1rem; }
+
+        .kw-wrap { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
+
+        .kw-pill {
+            color: #cdd9eb;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 999px;
+            padding: 0.35rem 0.65rem;
+            font-size: 0.75rem;
+        }
+
+        /* ── Empty result ────────────────────────────────────────────────── */
+        .empty-panel {
+            background: var(--surface);
+            border: 1px solid var(--surface-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--surface-sh);
+            padding: 1.3rem 1.4rem;
+        }
+
+        .empty-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) 220px;
+            gap: 1rem;
+        }
+
+        .empty-heading {
+            color: var(--txt);
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 0 0 0.35rem;
+        }
+
+        .empty-body {
+            color: var(--txt-soft);
+            font-size: 0.88rem;
+            line-height: 1.7;
+            margin: 0;
+        }
+
+        .empty-stats { display: grid; gap: 0.6rem; }
+
+        .empty-stat {
+            background: #f8fafd;
+            border: 1px solid rgba(148,163,184,0.14);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 0.8rem;
+        }
+
+        .es-label {
+            color: var(--txt-muted);
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin: 0 0 0.22rem;
+        }
+
+        .es-value {
+            color: var(--txt);
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+        }
+
+        /* ── Terminal stream ─────────────────────────────────────────────── */
+        .terminal-card {
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-b);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--dark-sh);
+            padding: 1.15rem 1.2rem;
+        }
+
+        .terminal-win {
+            margin-top: 0.8rem;
+            max-height: 260px;
+            overflow-y: auto;
+            background: rgba(2,8,23,0.5);
+            border: 1px solid rgba(148,163,184,0.10);
+            border-radius: var(--radius-sm);
+            padding: 0.85rem 0.9rem;
+            font-family: ui-monospace, "SF Mono", "SFMono-Regular",
+                         "JetBrains Mono", "Consolas", monospace;
+            font-size: 0.8rem;
+            line-height: 1.75;
+            color: #c8d8ea;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* ── Streamlit widget overrides ─────────────────────────────────── */
+        .stTextArea textarea {
+            min-height: 140px !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(148,163,184,0.22) !important;
+            background: #fafbfd !important;
+            color: var(--txt) !important;
+            font-size: 0.95rem !important;
+            line-height: 1.65 !important;
+            padding: 0.85rem 0.95rem !important;
+        }
+
+        .stTextArea textarea:focus {
+            border-color: rgba(79,127,228,0.5) !important;
+            box-shadow: 0 0 0 3px rgba(79,127,228,0.12) !important;
+        }
+
+        div[data-testid="stFormSubmitButton"] > button,
+        div[data-testid="stButton"] > button {
+            width: 100%;
+            border-radius: 999px !important;
+            border: none !important;
+            background: linear-gradient(135deg, #5b8def 0%, #4068d4 100%) !important;
+            color: #fff !important;
+            font-size: 0.92rem !important;
+            font-weight: 600 !important;
+            min-height: 46px !important;
+            box-shadow: 0 4px 14px rgba(64,104,212,0.28) !important;
+            transition: filter 0.15s ease, box-shadow 0.15s ease !important;
+        }
+
+        div[data-testid="stFormSubmitButton"] > button:hover,
+        div[data-testid="stButton"] > button:hover {
+            filter: brightness(1.06) !important;
+            box-shadow: 0 6px 18px rgba(64,104,212,0.32) !important;
+        }
+
+        .stAlert { border-radius: var(--radius-md) !important; }
+
+        /* ── Responsive breakpoints ─────────────────────────────────────── */
+        @media (max-width: 1100px) {
+            .client-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .hero-inner, .result-grid, .empty-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 720px) {
+            .main .block-container { padding: 1rem 0.75rem 2rem; }
+            .client-grid, .prob-grid { grid-template-columns: 1fr; }
+            .result-top-row, .conf-row, .prob-head, .cc-top, .m-head {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
 
 
 def _render_sidebar() -> None:
-    threat_level = str(st.session_state.threat_level)
-    threat_tone = _sidebar_value_tone(threat_level)
+    threat = str(st.session_state.threat_level)
+    tone = _threat_tone_class(threat)
     st.sidebar.markdown(
         f"""
-        <div class="sidebar-shell">
-            <div class="sidebar-kicker">Research console</div>
-            <div class="sidebar-title">Federated Spam Detection</div>
+        <div class="sb-kicker">Research console</div>
+        <div class="sb-title">Federated Spam Detection</div>
+        <p class="sb-desc">
+            Lightweight federated learning research dashboard. Simulates four
+            privacy-preserving clients, aggregates updates server-side, and
+            classifies messages in real time.
+        </p>
 
-            <div class="sidebar-panel">
-                <div class="sidebar-metric">
-                    <div class="sidebar-label">FL Server Status</div>
-                    <div class="sidebar-value tone-good">Online</div>
-                </div>
-                <div class="sidebar-metric">
-                    <div class="sidebar-label">Active Clients</div>
-                    <div class="sidebar-value tone-accent">4</div>
-                </div>
+        <div class="sb-panel">
+            <div class="sb-row">
+                <div class="sb-label">FL Server Status</div>
+                <div class="sb-value tone-good">Online</div>
             </div>
-
-            <div class="sidebar-panel">
-                <div class="sidebar-metric">
-                    <div class="sidebar-label">Aggregation Round</div>
-                    <div class="sidebar-value">{st.session_state.round_number}</div>
-                </div>
-                <div class="sidebar-metric">
-                    <div class="sidebar-label">Threat Level</div>
-                    <div class="sidebar-value {threat_tone}">{_escape_html(threat_level)}</div>
-                </div>
+            <div class="sb-row">
+                <div class="sb-label">Active Clients</div>
+                <div class="sb-value tone-accent">4</div>
             </div>
+        </div>
 
-            <div class="sidebar-panel">
-                <p class="sidebar-note">
-                    Lightweight federated research dashboard for local client updates,
-                    aggregation health, and message classification output.
-                </p>
+        <div class="sb-panel">
+            <div class="sb-row">
+                <div class="sb-label">Aggregation Round</div>
+                <div class="sb-value">{_esc(st.session_state.round_number)}</div>
+            </div>
+            <div class="sb-row">
+                <div class="sb-label">Threat Level</div>
+                <div class="sb-value {tone}">{_esc(threat)}</div>
+            </div>
+        </div>
+
+        <div class="sb-footer">
+            H1 · H2 · H3 · H4 clients &nbsp;·&nbsp; FedAvg aggregation
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 1 — Hero
+# ---------------------------------------------------------------------------
+
+
+def _render_hero() -> None:
+    global_signal = float(st.session_state.global_state.mean())
+    st.markdown(
+        f"""
+        <div class="hero-wrap">
+            <div class="hero-inner">
+                <div>
+                    <div class="hero-eyebrow">Federated learning · research demo</div>
+                    <div class="hero-title">Federated Spam Detection</div>
+                    <p class="hero-sub">
+                        A minimal research console that shows local client updates,
+                        federated model aggregation, and live inference — without visual clutter.
+                    </p>
+                </div>
+                <div class="signal-card">
+                    <div class="signal-label">Global signal</div>
+                    <div class="signal-value">{global_signal:.3f}</div>
+                    <p class="signal-note">
+                        Aggregated state from four simulated clients.
+                        Updated on each detection round.
+                    </p>
+                </div>
             </div>
         </div>
         """,
@@ -974,132 +933,160 @@ def _render_sidebar() -> None:
     )
 
 
-def _render_header() -> None:
-    global_signal = float(st.session_state.global_state.mean())
-    st.markdown(
-        f"""
-        <section class="hero-card">
-            <div class="hero-grid">
-                <div>
-                    <div class="eyebrow">Federated learning research demo</div>
-                    <h1 class="hero-title">Minimal dashboard for distributed spam detection</h1>
-                    <p class="hero-copy">
-                        A polished research-facing UI that highlights local client updates,
-                        model aggregation, and live inference without visual clutter.
-                    </p>
-                </div>
-                <div class="hero-meta-card">
-                    <div class="hero-meta-label">Global signal</div>
-                    <div class="hero-meta-value">{global_signal:.2f}</div>
-                    <p class="hero-meta-copy">
-                        The current aggregated state from four simulated clients, updated every detection round.
-                    </p>
-                </div>
+# ---------------------------------------------------------------------------
+# Section 2 — Input workspace
+# ---------------------------------------------------------------------------
+
+
+def _render_input_workspace() -> tuple[str, bool]:
+    """Render the detection form and research summary. Returns (message, submitted)."""
+    left, right = st.columns([1.3, 0.85], gap="large")
+
+    with left:
+        st.markdown(
+            """
+            <div class="card-eyebrow">Detection workspace</div>
+            <div class="card-heading">Analyze a message</div>
+            <p class="card-body">
+                Enter any message to run it through the federated detection workflow.
+                The four-client simulation updates the shared model and produces a prediction.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.form("detection_form", clear_on_submit=False):
+            message = st.text_area(
+                "Message to classify",
+                key="message_input",
+                placeholder="e.g. Congratulations! Click now to claim your free bitcoin reward.",
+                label_visibility="visible",
+            )
+            submitted = st.form_submit_button("Run Detection", use_container_width=True)
+
+    with right:
+        st.markdown(
+            """
+            <div class="research-card">
+                <div class="card-eyebrow">Research summary</div>
+                <div class="card-heading">What this dashboard shows</div>
+                <ul class="research-list">
+                    <li>
+                        <span class="ri">01</span>
+                        <span>Client H1–H4 metrics remain compact and evenly aligned.</span>
+                    </li>
+                    <li>
+                        <span class="ri">02</span>
+                        <span>Result panel combines prediction, confidence, workflow trace, and keyword evidence.</span>
+                    </li>
+                    <li>
+                        <span class="ri">03</span>
+                        <span>Activity feed provides an engineering-grade event log of the federated run.</span>
+                    </li>
+                </ul>
             </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
+
+    return message, submitted
+
+
+# ---------------------------------------------------------------------------
+# Section 3 — Client summary
+# ---------------------------------------------------------------------------
 
 
 def _render_client_cards(client_updates: list[dict]) -> None:
-    cards: list[str] = []
-    stat_labels = [
-        "Spam signal",
-        "Keyword density",
-        "Normalized length",
-        "Sync score",
-    ]
+    stat_labels = ["Spam signal", "Keyword density", "Normalized length", "Sync score"]
 
+    cards_html: list[str] = []
     for update in client_updates:
-        parameter_values = [float(value) for value in update["parameters"][: len(stat_labels)]]
-        parameter_count = len(update["parameters"])
-        mismatch_note = ""
-        if len(parameter_values) < len(stat_labels):
-            parameter_values.extend([0.0] * (len(stat_labels) - len(parameter_values)))
-        if parameter_count != len(stat_labels):
+        params = list(update["parameters"])
+        # Pad or trim to match stat_labels length
+        while len(params) < len(stat_labels):
+            params.append(0.0)
+        params = params[: len(stat_labels)]
+
+        if len(update["parameters"]) != len(stat_labels):
             _append_log(
-                f"Warning: client {update['client_id']} reported {parameter_count} parameters; expected {len(stat_labels)}"
-            )
-            mismatch_note = (
-                '<div class="client-subtitle">Parameter vector adjusted to preserve dashboard rendering.</div>'
-            )
-        rows: list[str] = []
-        for label, metric_value in zip(stat_labels, parameter_values):
-            if not 0.0 <= metric_value <= 1.0:
-                _append_log(
-                    f"Warning: client {update['client_id']} reported out-of-range metric {label}={metric_value:.2f}"
-                )
-            width = max(0, min(int(metric_value * 100), 100))
-            rows.append(
-                f"""
-                <div class="metric-line">
-                    <div class="metric-head">
-                        <div class="metric-label">{_escape_html(label)}</div>
-                        <div class="metric-value">{metric_value:.2f}</div>
-                    </div>
-                    <div class="mini-track"><span class="mini-fill" style="width:{width}%"></span></div>
-                </div>
-                """
+                f"Warning: client {update['client_id']} reported "
+                f"{len(update['parameters'])} parameters; expected {len(stat_labels)}"
             )
 
-        cards.append(
-            f"""
-            <div class="client-card">
-                <div class="client-top">
-                    <div>
-                        <div class="client-name">Client {_escape_html(update['client_id'])}</div>
-                        <div class="client-subtitle">Compact local metrics from the current shard update.</div>
-                        {mismatch_note}
-                    </div>
-                    <div class="client-badge">{int(update['sample_count'])} samples</div>
-                </div>
-                <div class="client-stats">{''.join(rows)}</div>
-            </div>
-            """
+        rows_html = ""
+        for label, val in zip(stat_labels, params):
+            val = float(val)
+            if not 0.0 <= val <= 1.0:
+                _append_log(
+                    f"Warning: client {update['client_id']} out-of-range "
+                    f"{label}={val:.2f}"
+                )
+            pct = max(0, min(int(val * 100), 100))
+            rows_html += (
+                f'<div class="m-row">'
+                f'<div class="m-head">'
+                f'<span class="m-label">{_esc(label)}</span>'
+                f'<span class="m-val">{val:.2f}</span>'
+                f"</div>"
+                f'<div class="bar-track"><span class="bar-fill" style="width:{pct}%"></span></div>'
+                f"</div>"
+            )
+
+        cards_html.append(
+            f'<div class="client-card">'
+            f'<div class="cc-top">'
+            f'<div>'
+            f'<div class="cc-name">Client {_esc(update["client_id"])}</div>'
+            f'<div class="cc-sub">{int(update["sample_count"])} samples · local shard</div>'
+            f"</div>"
+            f'<span class="cc-badge">{_esc(update["client_id"])}</span>'
+            f"</div>"
+            f'<div class="cc-stats">{rows_html}</div>'
+            f"</div>"
         )
 
     st.markdown(
-        f"""
-        <div class="section-label">Client cards</div>
-        <h2 class="section-title">Distributed client summary</h2>
-        <p class="section-copy">
-            Four equal-height client cards show the latest local signals without overflow or spacing issues.
-        </p>
-        <div class="client-grid">{''.join(cards)}</div>
-        """,
+        f'<div class="sec-label">Client summary</div>'
+        f'<div class="sec-title">Distributed client overview</div>'
+        f'<p class="sec-sub">Four equal-height cards show the latest local signals from each simulated client.</p>'
+        f'<div class="client-grid">{"".join(cards_html)}</div>',
         unsafe_allow_html=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Section 4 — Detection result
+# ---------------------------------------------------------------------------
 
 
 def _render_empty_result() -> None:
     st.markdown(
         f"""
-        <div class="section-label">Detection result</div>
-        <h2 class="section-title">Inference analytics</h2>
-        <p class="section-copy">Run a message through the workflow to populate the prediction panel.</p>
-        <div class="empty-state">
+        <div class="sec-label">Detection result</div>
+        <div class="sec-title">Inference output</div>
+        <p class="sec-sub">Run a message through the workflow to populate the prediction panel.</p>
+        <div class="empty-panel">
             <div class="empty-grid">
                 <div>
-                    <div class="card-kicker">Awaiting input</div>
-                    <div class="card-title">Dashboard output will appear here</div>
-                    <p class="empty-copy">
-                        The result area is prepared to show prediction badge, confidence, threat level,
-                        probability split, workflow progression, and matched keywords in one clean view.
+                    <div class="card-eyebrow">Awaiting input</div>
+                    <div class="empty-heading">Dashboard output will appear here</div>
+                    <p class="empty-body">
+                        The result area will show prediction badge, confidence, threat level,
+                        probability split, workflow trace, and matched keyword chips.
                     </p>
                 </div>
                 <div class="empty-stats">
                     <div class="empty-stat">
-                        <div class="empty-stat-label">Threat state</div>
-                        <div class="empty-stat-value">{_escape_html(st.session_state.threat_level)}</div>
+                        <div class="es-label">Threat state</div>
+                        <div class="es-value">{_esc(st.session_state.threat_level)}</div>
                     </div>
                     <div class="empty-stat">
-                        <div class="empty-stat-label">Aggregation round</div>
-                        <div class="empty-stat-value">{st.session_state.round_number}</div>
+                        <div class="es-label">Round</div>
+                        <div class="es-value">{_esc(st.session_state.round_number)}</div>
                     </div>
                     <div class="empty-stat">
-                        <div class="empty-stat-label">Global signal</div>
-                        <div class="empty-stat-value">{float(st.session_state.global_state.mean()):.2f}</div>
+                        <div class="es-label">Global signal</div>
+                        <div class="es-value">{float(st.session_state.global_state.mean()):.3f}</div>
                     </div>
                 </div>
             </div>
@@ -1109,127 +1096,114 @@ def _render_empty_result() -> None:
     )
 
 
-def _render_result_section(result: dict) -> None:
+def _render_result(result: dict) -> None:
     prediction = str(result["prediction"])
-    prediction_class = "prediction-spam" if prediction == "SPAM" else "prediction-ham"
-    threat_level = str(result["threat_level"])
+    pred_class = "pred-spam" if prediction == "SPAM" else "pred-ham"
+    threat = str(result["threat_level"])
     matches = result.get("matches", [])
     confidence = int(result["confidence"])
-    spam_probability = float(result["spam_probability"])
-    ham_probability = float(result["ham_probability"])
-    keyword_component = float(result.get("keyword_component", 0.0))
+    spam_p = float(result["spam_probability"])
+    ham_p = float(result["ham_probability"])
+    kw_comp = float(result.get("keyword_component", 0.0))
+    global_sig = float(result.get("global_signal", float(st.session_state.global_state.mean())))
+
     workflow_steps = [
         (
             "Client shards synchronized",
-            "H1-H4 summarize local data privately before sharing compact update vectors.",
+            "H1–H4 summarize local data privately before sharing compact update vectors.",
         ),
         (
             "Federated aggregation completed",
-            f"Round {st.session_state.round_number} updates merged into a global signal of {float(st.session_state.global_state.mean()):.2f}.",
+            f"Round {st.session_state.round_number} updates merged into global signal "
+            f"{float(st.session_state.global_state.mean()):.3f}.",
         ),
         (
             "Inference scored",
-            f"Keyword engine identified {len(matches)} suspicious token{'s' if len(matches) != 1 else ''} in the submitted message.",
+            f"Keyword engine found {len(matches)} suspicious "
+            f"token{'s' if len(matches) != 1 else ''} in the message.",
         ),
         (
             "Decision published",
-            f"Message classified as {prediction} with {confidence}% confidence and {threat_level} threat level.",
+            f"Classified as {_esc(prediction)} with {confidence}% confidence and "
+            f"{_esc(threat)} threat.",
         ),
     ]
 
-    keyword_pills = "".join(
-        f'<span class="keyword-pill">{_escape_html(keyword)}</span>' for keyword in matches
-    ) or '<span class="keyword-pill">No suspicious keywords matched</span>'
+    wf_html = "".join(
+        f'<div class="wf-step">'
+        f'<div class="wf-num">{i}</div>'
+        f'<div>'
+        f'<div class="wf-step-title">{_esc(title)}</div>'
+        f'<div class="wf-step-body">{_esc(body)}</div>'
+        f"</div>"
+        f"</div>"
+        for i, (title, body) in enumerate(workflow_steps, start=1)
+    )
 
-    workflow_html = "".join(
-        f"""
-        <div class="workflow-step">
-            <div class="workflow-index">{index}</div>
-            <div>
-                <div class="workflow-step-title">{_escape_html(title)}</div>
-                <div class="workflow-step-copy">{_escape_html(copy)}</div>
-            </div>
-        </div>
-        """
-        for index, (title, copy) in enumerate(workflow_steps, start=1)
+    kw_html = "".join(
+        f'<span class="kw-pill">{_esc(k)}</span>' for k in matches
+    ) or '<span class="kw-pill">No suspicious keywords matched</span>'
+
+    prob_cards = [
+        ("Spam probability", format_percent(spam_p), int(spam_p * 100)),
+        ("Ham probability", format_percent(ham_p), int(ham_p * 100)),
+        ("Threat level", _esc(threat), int(spam_p * 100)),
+        ("Keyword signal", format_percent(kw_comp), int(kw_comp * 100)),
+    ]
+
+    prob_html = "".join(
+        f'<div class="prob-card">'
+        f'<div class="prob-head">'
+        f'<span class="prob-label">{_esc(lbl)}</span>'
+        f'<span class="prob-val">{val}</span>'
+        f"</div>"
+        f'<div class="meter-track"><span class="meter-fill" style="width:{pct}%"></span></div>'
+        f"</div>"
+        for lbl, val, pct in prob_cards
     )
 
     st.markdown(
         f"""
-        <div class="section-label">Detection result</div>
-        <h2 class="section-title">Inference analytics</h2>
-        <p class="section-copy">A cleaner result surface for prediction, confidence, workflow, and keyword evidence.</p>
+        <div class="sec-label">Detection result</div>
+        <div class="sec-title">Inference output</div>
+        <p class="sec-sub">Prediction, confidence breakdown, federated workflow trace, and matched keywords.</p>
 
         <div class="result-grid">
             <div class="result-card">
-                <div class="result-top">
-                    <div>
-                        <div class="result-kicker">Prediction output</div>
-                        <div class="prediction-badge {prediction_class}">{_escape_html(prediction)}</div>
-                    </div>
-                    <div class="tone-pill {_tone_class(threat_level)}">Threat {_escape_html(threat_level)}</div>
+                <div class="dk-kicker">Prediction output</div>
+                <div class="result-top-row">
+                    <span class="pred-badge {pred_class}">{_esc(prediction)}</span>
+                    <span class="threat-pill {_threat_pill_class(threat)}">Threat · {_esc(threat)}</span>
                 </div>
 
-                <div class="result-confidence">
-                    <div class="confidence-row">
+                <div class="conf-block">
+                    <div class="conf-row">
                         <div>
-                            <div class="result-title">Confidence</div>
-                            <p class="result-copy">Probability-weighted confidence for the final classification.</p>
+                            <div class="conf-label">Confidence</div>
+                            <p class="conf-sub">Probability-weighted confidence for the final classification.</p>
                         </div>
-                        <div class="confidence-value">{confidence}%</div>
+                        <div class="conf-pct">{confidence}%</div>
                     </div>
-                    <div class="result-progress"><span class="result-fill" style="width:{confidence}%"></span></div>
-                </div>
-
-                <div class="result-metric-grid">
-                    <div class="probability-card">
-                        <div class="probability-head">
-                            <div class="probability-label">Spam probability</div>
-                            <div class="probability-value">{_escape_html(format_percent(spam_probability))}</div>
-                        </div>
-                        <div class="meter-track"><span class="meter-fill" style="width:{int(spam_probability * 100)}%"></span></div>
-                    </div>
-
-                    <div class="probability-card">
-                        <div class="probability-head">
-                            <div class="probability-label">Ham probability</div>
-                            <div class="probability-value">{_escape_html(format_percent(ham_probability))}</div>
-                        </div>
-                        <div class="meter-track"><span class="meter-fill" style="width:{int(ham_probability * 100)}%"></span></div>
-                    </div>
-
-                    <div class="probability-card">
-                        <div class="probability-head">
-                            <div class="probability-label">Threat level</div>
-                            <div class="probability-value">{_escape_html(threat_level)}</div>
-                        </div>
-                        <div class="meter-track"><span class="meter-fill" style="width:{int(spam_probability * 100)}%"></span></div>
-                    </div>
-
-                    <div class="probability-card">
-                        <div class="probability-head">
-                            <div class="probability-label">Keyword signal</div>
-                            <div class="probability-value">{_escape_html(format_percent(keyword_component))}</div>
-                        </div>
-                        <div class="meter-track"><span class="meter-fill" style="width:{int(keyword_component * 100)}%"></span></div>
+                    <div class="conf-track">
+                        <span class="conf-fill" style="width:{confidence}%"></span>
                     </div>
                 </div>
+
+                <div class="prob-grid">{prob_html}</div>
             </div>
 
             <div class="workflow-card">
                 <div>
-                    <div class="workflow-kicker">Workflow visualization</div>
-                    <div class="result-title">Federated decision path</div>
-                    <p class="workflow-copy">
-                        A lightweight trace from client synchronization through server aggregation and final scoring.
+                    <div class="dk-kicker">Workflow trace</div>
+                    <div class="wf-title">Federated decision path</div>
+                    <p class="wf-sub">
+                        Lightweight trace from client synchronization through server aggregation to scoring.
                     </p>
                 </div>
-
-                <div class="workflow-flow">{workflow_html}</div>
-
-                <div>
-                    <div class="workflow-kicker">Matched keywords</div>
-                    <div class="keyword-wrap">{keyword_pills}</div>
+                <div class="wf-steps">{wf_html}</div>
+                <div class="kw-section">
+                    <div class="dk-kicker">Matched keywords</div>
+                    <div class="kw-wrap">{kw_html}</div>
                 </div>
             </div>
         </div>
@@ -1238,23 +1212,33 @@ def _render_result_section(result: dict) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Section 5 — Live terminal stream
+# ---------------------------------------------------------------------------
+
+
 def _render_logs() -> None:
     log_lines = st.session_state.activity_log[-MAX_VISIBLE_LOG_LINES:]
-    log_text = "\n".join(log_lines) if log_lines else "[system] Waiting for a detection run..."
+    log_text = _esc(
+        "\n".join(log_lines) if log_lines else "[system] Waiting for a detection run…"
+    )
     st.markdown(
         f"""
-        <div class="section-label">Live activity feed</div>
-        <h2 class="section-title">Terminal stream</h2>
-        <p class="section-copy">Minimal event log with monospace typography and a scrollable dark surface.</p>
-        <div class="activity-card">
-            <div class="activity-kicker">Live activity feed</div>
-            <div class="result-title">Federated runtime events</div>
-            <p class="activity-copy">Client updates, aggregation steps, and prediction events are streamed here.</p>
-            <div class="activity-window">{_escape_html(log_text)}</div>
+        <div class="sec-label">Activity feed</div>
+        <div class="sec-title">Live terminal stream</div>
+        <p class="sec-sub">Client updates, aggregation steps, and prediction events — monospace, dark surface.</p>
+        <div class="terminal-card">
+            <div class="dk-kicker">Federated runtime events</div>
+            <div class="terminal-win">{log_text}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Detection runner (backend logic — unchanged)
+# ---------------------------------------------------------------------------
 
 
 def _run_demo(message: str) -> None:
@@ -1292,7 +1276,7 @@ def _run_demo(message: str) -> None:
             elif phase == "aggregate":
                 aggregated_state = aggregate_client_updates(client_updates)
                 st.session_state.global_state = aggregated_state
-                _append_log(f"global state updated to {float(aggregated_state.mean()):.2f}")
+                _append_log(f"global state updated to {float(aggregated_state.mean()):.3f}")
             elif phase == "score":
                 result = score_message(message, aggregated_state)
                 _append_log(
@@ -1315,9 +1299,14 @@ def _run_demo(message: str) -> None:
     st.session_state.threat_level = result["threat_level"]
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="Federated Spam Detection Dashboard",
+        page_title="Federated Spam Detection",
         page_icon="🛡️",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -1325,52 +1314,11 @@ def main() -> None:
     _initialize_state()
     _inject_styles()
     _render_sidebar()
-    _render_header()
+    _render_hero()
 
-    top_left, top_right = st.columns([1.18, 0.82], gap="large")
+    message, submitted = _render_input_workspace()
 
-    with top_left:
-        with st.form("detection_form"):
-            st.markdown(
-                """
-                <div class="card-kicker">Detection workspace</div>
-                <div class="card-title">Analyze a message with the federated baseline</div>
-                <p class="card-copy">
-                    Enter a message to inspect how the four-client simulation updates the shared model and produces a prediction.
-                </p>
-                """,
-                unsafe_allow_html=True,
-            )
-            message = st.text_area(
-                "Message to classify",
-                key="message_input",
-                placeholder="Example: Congratulations, click now to claim your free reward.",
-                label_visibility="visible",
-            )
-            _, center_column, _ = st.columns([1, 1.2, 1])
-            with center_column:
-                run_clicked = st.form_submit_button("Run Detection", use_container_width=True)
-
-    with top_right:
-        st.markdown(
-            """
-            <div class="surface-card">
-                <div class="card-kicker">Research summary</div>
-                <div class="card-title">What the dashboard emphasizes</div>
-                <p class="card-copy">
-                    The interface stays intentionally minimal while surfacing the elements professors and reviewers care about most.
-                </p>
-                <ul class="research-list">
-                    <li><span class="research-index">01</span><span>Client H1-H4 metrics remain compact, readable, and evenly aligned.</span></li>
-                    <li><span class="research-index">02</span><span>The result panel combines prediction, confidence, workflow, and evidence in one clean surface.</span></li>
-                    <li><span class="research-index">03</span><span>The activity feed keeps the demo grounded in a real engineering workflow.</span></li>
-                </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    if run_clicked:
+    if submitted:
         if message.strip():
             _run_demo(message.strip())
         else:
@@ -1381,7 +1329,7 @@ def main() -> None:
     if st.session_state.latest_result is None:
         _render_empty_result()
     else:
-        _render_result_section(st.session_state.latest_result)
+        _render_result(st.session_state.latest_result)
 
     _render_logs()
 
