@@ -69,7 +69,7 @@ def _inject_styles() -> None:
         }
 
         html, body, [class*="css"] {
-            font-family: "Inter", "SF Pro Display", "Segoe UI", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", "Segoe UI", sans-serif;
         }
 
         .stApp {
@@ -720,7 +720,7 @@ def _inject_styles() -> None:
             background: rgba(2, 8, 23, 0.45);
             border: 1px solid rgba(148, 163, 184, 0.12);
             color: #d6e2f0;
-            font-family: "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
+            font-family: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
             font-size: 0.82rem;
             line-height: 1.75;
             white-space: pre-wrap;
@@ -1026,6 +1026,10 @@ def _render_client_cards(client_updates: list[dict]) -> None:
             )
         rows: list[str] = []
         for label, metric_value in zip(stat_labels, parameter_values):
+            if not 0.0 <= metric_value <= 1.0:
+                _append_log(
+                    f"Warning: client {update['client_id']} reported out-of-range metric {label}={metric_value:.2f}"
+                )
             width = max(0, min(int(metric_value * 100), 100))
             rows.append(
                 f"""
@@ -1258,7 +1262,7 @@ def _run_demo(message: str) -> None:
     shards = split_dataset_for_clients(frame, CLIENT_IDS)
 
     st.session_state.round_number += 1
-    _append_log(f"round {st.session_state.round_number}: message queued for analysis")
+    _append_log(f"Round {st.session_state.round_number}: message queued for analysis")
 
     progress = st.progress(0, text="Initializing federated workflow")
     client_updates: list[dict] = []
