@@ -1085,7 +1085,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
     st.markdown(
         f'<div class="sec-label">Client summary</div>'
         f'<div class="sec-title">Distributed client overview</div>'
-        f'<p class="sec-sub">{_esc(len(client_updates))} equal-height cards show the latest local signals from each simulated client.</p>'
+        f'<p class="sec-sub">{_esc(len(client_updates))} cards in a responsive grid show the latest local signals from each simulated client.</p>'
         f'<div class="client-grid">{"".join(cards_html)}</div>',
         unsafe_allow_html=True,
     )
