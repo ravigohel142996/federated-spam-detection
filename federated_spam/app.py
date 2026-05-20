@@ -28,16 +28,25 @@ MAX_VISIBLE_LOG_LINES = 24
 
 
 @st.cache_data(show_spinner=False)
+def _load_dataset_frame():
+    return load_spam_dataset(DATASET_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def _load_dataset_shards():
+    return split_dataset_for_clients(_load_dataset_frame(), CLIENT_IDS)
+
+
+@st.cache_data(show_spinner=False)
 def _build_default_client_snapshot() -> list[dict]:
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    shards = _load_dataset_shards()
     return [client_update(shards[cid], cid) for cid in CLIENT_IDS]
 
 
 @st.cache_data(show_spinner=False)
 def _load_dataset_context() -> dict:
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    frame = _load_dataset_frame()
+    shards = _load_dataset_shards()
     total_messages = int(len(frame))
     spam_count = int(frame["is_spam"].sum())
     ham_count = int(total_messages - spam_count)
@@ -55,7 +64,7 @@ def _load_dataset_context() -> dict:
 
 @st.cache_data(show_spinner=False)
 def _load_dataset_preview(rows: int = 12):
-    frame = load_spam_dataset(DATASET_PATH)
+    frame = _load_dataset_frame()
     return frame.loc[:, ["label", "message"]].head(rows).rename(
         columns={"label": "Label", "message": "Message"}
     )
@@ -1085,7 +1094,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
     st.markdown(
         f'<div class="sec-label">Client summary</div>'
         f'<div class="sec-title">Distributed client overview</div>'
-        f'<p class="sec-sub">{_esc(len(client_updates))} cards in a responsive grid show the latest local signals from each simulated client.</p>'
+        f'<p class="sec-sub">{_esc(len(client_updates))} client cards in a responsive grid show the latest local signals from each simulated client.</p>'
         f'<div class="client-grid">{"".join(cards_html)}</div>',
         unsafe_allow_html=True,
     )
@@ -1309,8 +1318,7 @@ def _render_logs() -> None:
 
 
 def _run_demo(message: str) -> None:
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    shards = _load_dataset_shards()
 
     st.session_state.round_number += 1
     _append_log(f"Round {st.session_state.round_number}: message queued for analysis")
