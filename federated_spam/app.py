@@ -28,10 +28,46 @@ MAX_VISIBLE_LOG_LINES = 24
 
 
 @st.cache_data(show_spinner=False)
+def _load_dataset_frame():
+    return load_spam_dataset(DATASET_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def _load_dataset_shards():
+    return split_dataset_for_clients(_load_dataset_frame(), CLIENT_IDS)
+
+
+@st.cache_data(show_spinner=False)
 def _build_default_client_snapshot() -> list[dict]:
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    shards = _load_dataset_shards()
     return [client_update(shards[cid], cid) for cid in CLIENT_IDS]
+
+
+@st.cache_data(show_spinner=False)
+def _load_dataset_context() -> dict:
+    frame = _load_dataset_frame()
+    shards = _load_dataset_shards()
+    total_messages = int(len(frame))
+    spam_count = int(frame["is_spam"].sum())
+    ham_count = int(total_messages - spam_count)
+    spam_rate = float(spam_count / total_messages) if total_messages else 0.0
+    average_length = float(frame["message_length"].mean()) if total_messages else 0.0
+    return {
+        "total_messages": total_messages,
+        "spam_count": spam_count,
+        "ham_count": ham_count,
+        "spam_rate": spam_rate,
+        "average_length": average_length,
+        "client_count": len(shards),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def _load_dataset_preview(rows: int = 12):
+    frame = _load_dataset_frame()
+    return frame.loc[:, ["label", "message"]].head(rows).rename(
+        columns={"label": "Label", "message": "Message"}
+    )
 
 
 def _initialize_state() -> None:
@@ -859,6 +895,7 @@ def _inject_styles() -> None:
 def _render_sidebar() -> None:
     threat = str(st.session_state.threat_level)
     tone = _threat_tone_class(threat)
+    dataset = _load_dataset_context()
     st.sidebar.markdown(
         f"""
         <div class="sb-kicker">Research console</div>
@@ -876,7 +913,11 @@ def _render_sidebar() -> None:
             </div>
             <div class="sb-row">
                 <div class="sb-label">Active Clients</div>
-                <div class="sb-value tone-accent">4</div>
+                <div class="sb-value tone-accent">{_esc(dataset["client_count"])}</div>
+            </div>
+            <div class="sb-row">
+                <div class="sb-label">Dataset Messages</div>
+                <div class="sb-value">{_esc(dataset["total_messages"])}</div>
             </div>
         </div>
 
@@ -888,6 +929,10 @@ def _render_sidebar() -> None:
             <div class="sb-row">
                 <div class="sb-label">Threat Level</div>
                 <div class="sb-value {tone}">{_esc(threat)}</div>
+            </div>
+            <div class="sb-row">
+                <div class="sb-label">Spam Ratio</div>
+                <div class="sb-value tone-warn">{format_percent(dataset["spam_rate"])}</div>
             </div>
         </div>
 
@@ -906,6 +951,7 @@ def _render_sidebar() -> None:
 
 def _render_hero() -> None:
     global_signal = float(st.session_state.global_state.mean())
+    dataset = _load_dataset_context()
     st.markdown(
         f"""
         <div class="hero-wrap">
@@ -922,8 +968,8 @@ def _render_hero() -> None:
                     <div class="signal-label">Global signal</div>
                     <div class="signal-value">{global_signal:.3f}</div>
                     <p class="signal-note">
-                        Aggregated state from four simulated clients.
-                        Updated on each detection round.
+                        Aggregated state from {_esc(dataset["client_count"])} simulated clients.
+                        Dataset loaded: {_esc(dataset["total_messages"])} messages ({format_percent(dataset["spam_rate"])} spam).
                     </p>
                 </div>
             </div>
@@ -1048,7 +1094,7 @@ def _render_client_cards(client_updates: list[dict]) -> None:
     st.markdown(
         f'<div class="sec-label">Client summary</div>'
         f'<div class="sec-title">Distributed client overview</div>'
-        f'<p class="sec-sub">Four equal-height cards show the latest local signals from each simulated client.</p>'
+        f'<p class="sec-sub">{_esc(len(client_updates))} client cards in a responsive grid show the latest local signals from each simulated client.</p>'
         f'<div class="client-grid">{"".join(cards_html)}</div>',
         unsafe_allow_html=True,
     )
@@ -1213,7 +1259,37 @@ def _render_result(result: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Section 5 — Live terminal stream
+# Section 5 — Dataset snapshot
+# ---------------------------------------------------------------------------
+
+
+def _render_dataset_snapshot() -> None:
+    dataset = _load_dataset_context()
+    st.markdown(
+        """
+        <div class="sec-label">Dataset view</div>
+        <div class="sec-title">Loaded dataset snapshot</div>
+        <p class="sec-sub">UI values below are computed from the currently loaded spam dataset.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4, gap="small")
+    col1.metric("Total Messages", dataset["total_messages"])
+    col2.metric("Spam Messages", dataset["spam_count"])
+    col3.metric("Ham Messages", dataset["ham_count"])
+    col4.metric("Avg Message Length", f"{dataset['average_length']:.1f}")
+
+    st.dataframe(
+        _load_dataset_preview(),
+        use_container_width=True,
+        hide_index=True,
+        height=300,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 6 — Live terminal stream
 # ---------------------------------------------------------------------------
 
 
@@ -1242,8 +1318,7 @@ def _render_logs() -> None:
 
 
 def _run_demo(message: str) -> None:
-    frame = load_spam_dataset(DATASET_PATH)
-    shards = split_dataset_for_clients(frame, CLIENT_IDS)
+    shards = _load_dataset_shards()
 
     st.session_state.round_number += 1
     _append_log(f"Round {st.session_state.round_number}: message queued for analysis")
@@ -1331,6 +1406,7 @@ def main() -> None:
     else:
         _render_result(st.session_state.latest_result)
 
+    _render_dataset_snapshot()
     _render_logs()
 
 
